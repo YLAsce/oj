@@ -1,0 +1,15 @@
+Contestant
+    name
+    gender
+    class_id
+    student_id
+    email
+    mobile
+    school
+    team (FOREIGN TO Team)
+    
+Team
+    name
+    passwd
+    status
+    reason

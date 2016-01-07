@@ -1,0 +1,62 @@
+# Submission.models 文档
+
+Class Submission: Submission表
+
+    (field)
+        |name|type|attributes|default value|statement
+
+        sid; auto_field; primary_key; ++(self-increasing)
+
+        user; foreign_key to User; auto id field; --( no need to set);foreign key cannot refer to a non-existed object
+
+        problem_index; foreign_key to ContestProblem; django automatically adds a problem_index_id field;--;include contest and problem info
+
+        status; char_field; max_length=20 && use choices tuple STATUS_ABBR as value| need a default value or not?
+
+        data_cnt; int_field; *; --
+
+        code_file; file_path_field; path='code'; --
+
+        code_length; int_field; *; --
+
+        code_language; char_field; max_length=100 && use choices tuple Const.LANG as value| need a default value or not?
+
+        run_time; int_field; unit: ms; --
+
+        run_memory; int_field; unit: kb; --
+
+        other_info; text_field; --; '' # empty
+
+    (app_method)
+        addSubmission:
+            @type: classmethod
+            @param: cls, user, pid, cid, problem_index_id, data_cnt,
+                    \code_file, code_language, code_length, other_info
+            @return: Submission object
+
+        rejudgeSubmission:
+            @type: classmethod
+            @param: cls, sid
+            @return: True or False
+
+        updateSubmission:
+            @type: classmethod
+            @param: cls, sid, judge_info # a python dict
+            @return: True or False
+
+        submissionList:
+            @type: classmethod
+            @param: cls, page_id, user, pid, username, language, status, cid
+            @return: filterd Submission object list ranged by page_id
+
+        receiveJudge:
+            @type: classmethod
+            @param: cls, sid, pid, uid, cid, problem_index_id, status, run_time, run_memory | # I think data_cnt, code_file, code_length, code_language
+            @return: True or False
+
+        canViewCode:
+            @type: classmethod
+            @param: cls, user, sid
+            @return: content of code
+
+        # to be modified

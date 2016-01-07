@@ -1,0 +1,71 @@
+# info about Problem.models
+
+Class Problem: Problem Table
+
+    (constants)
+        TITLE_MAX_LEN: Title's max length
+        DESC_MAX_LEN: Description's max length
+		ADMIN_ID: Admin's user_id (May edit)
+
+		*_ERR_MSG: Error message
+
+		PROB_PRIV_CH: Privilege id
+
+    (field)
+        |name|type|attributes|default value
+
+        pid; auto_field; primary_key; ++(self-increasing)
+
+        prob_priv; char; privilege; --
+
+        prob_title; char; title; 'Untitled'
+
+        prob_time; int; time limit (ms); 1000
+
+        prob_memory; int; memory limit (kb); 32768
+
+        prob_codelength; int; code length limit (kb); 64
+
+        prob_desc; text; description of the problem; --
+
+        is_spj; int; special judge; 0
+
+        author; foreign key 'User.admin'; problem author; --
+
+        data_count; int; number of data; 0
+
+    (app_method)
+        addProblem:
+            @type: classmethod
+            @param: uid, prob_priv, prob_title, prob_time, \
+				prob_memory, prob_codelength, prob_desc, is_spj,\
+				data_count
+            @return: Problem id just added
+
+        updateProblem:
+            @type: classmethod
+            @param: uid, prob_priv, prob_title, prob_time,\
+				prob_memory, prob_codelength, prob_desc, is_spj,\
+				data_count, expPid
+            @return: Problem id just edit
+
+        deleteProblem:
+            @type: classmethod
+            @param: uid, expPid
+            @return: Problem id just delete
+
+        problemList:
+            @type: classmethod
+            @param: uid, pageId
+            @return: Problem list user can see
+
+        getProblem:
+            @type: classmethod
+            @param: expPid
+            @return: Problem info
+
+        canViewProblem:
+            @type: classmethod
+            @param: user, prob
+            @return: if user can see problem
+        # to be modified

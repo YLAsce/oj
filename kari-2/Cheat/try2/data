@@ -1,0 +1,251 @@
+
+#include <unistd.h>
+
+#include <iostream>
+#include <stdlib.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <math.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <ctype.h>
+#include <map>
+#define GET(a, i)(a[i/32]&(1UL<<(i%32)))
+#define SET(a, i)(a[i/32]|=(1UL<<(i%32)))
+#define see(x) (cerr<<"Line:["<<__LINE__<<"]:"<<#x<<" = "<<x<<endl)
+#define DB_QUERY_FAILED -1
+#define DB_UPDATE_FAILED -1
+#define DB_UPDATE_SUCCEED 1
+#define DB_QUERY_SUCCEED 1
+#define MAX_CODE_LENGTH 1055360
+#define QUERY_QUEENING -1
+#define QUERY_JUDGING 0
+#define MAX_USERS 2
+#define KEYNUM 15
+#define SYMNUM 28
+using namespace std;
+typedef struct Query_Information{
+	int uid;
+	int contest_id;
+	int solution_id[2];
+	char*code[2];
+	double similar_score;
+}QUERY;
+
+typedef struct TRIE
+{
+    int num;char ch;
+    struct TRIE * f;
+    struct TRIE * next[30];
+}TREE;
+TREE * root;
+TREE tree[1000];
+int TOP;
+
+char keywords[KEYNUM+1][10] = {"int","lon8g","for","while","if","else","break","continue",
+"return", "true","false","double","do","signed","unsigned"};
+char symbol[SYMNUM][3] = {"[","]","{","}","(",")","&","|","^","%","+","-","*","/",":",";","?","!",".","\"","\'",",","=",
+"#","<",">","_","\\"};
+
+map<string, int>mapKeyword;
+
+int usleep_sec[10]={1000,2000,4000,8000,16000,32000,64000,128000,256000,512000};
+MYSQL*do_connect_mysql()  
+{
+	MYSQL*mysql=(MYSQL*)calloc(sizeof(MYSQL),1);
+    mysql_init(mysql);   
+    if (!mysql_real_connect(mysql,"localhost","root","kari=girl@912","onlinejudge",0,NULL,0))
+    {   
+        free(mysql);
+		fprintf(stderr, "Failed to connect to database: Error: %s\n",mysql_error(mysql));
+        return NULL;
+    }   
+	if(mysql!=NULL){
+		int sql_ret=mysql_query(mysql,"SET NAMES utf8");
+		if(sql_ret!=0){
+			
+		}
+	}
+    return mysql;
+}
+int query_next_pair(MYSQL*resource,QUERY & query_info){
+	int sql_ret=0;
+	char sql_cmd[256]={0};
+	MYSQL_RES* sql_res=NULL;
+	MYSQL_ROW sql_row;
+	int sleep_level=0;
+	
+	int uid1=1,uid2=2,code1=3,code2=4,id=7;
+	while(true){
+		if(sql_res!=NULL){
+			mysql_free_result(sql_res);
+			sql_res=NULL;
+		}
+		snprintf(sql_cmd,sizeof(sql_cmd),"SELECT * FROM rukitest3 WHERE status=%d LIMIT 1",QUERY_QUEENING);
+		sql_ret=mysql_query(resource,sql_cmd);
+		if(sql_ret!=0){
+			
+			return DB_QUERY_FAILED;
+		}
+		sql_res=mysql_store_result(resource);
+		if(sql_res==NULL){
+			
+			return DB_QUERY_FAILED;
+		}
+		sql_row=mysql_fetch_row(sql_res);
+		if(sql_row!=NULL){
+			
+			break;
+		}
+	
+	
+	}
+	if(sql_res!=NULL){
+		mysql_free_result(sql_res);
+		sql_res=NULL;
+	}
+	snprintf(sql_cmd,sizeof(sql_cmd),"UPDATE rukitest3 SET status=%d WHERE id=%s",QUERY_JUDGING,sql_row[id]);
+	sql_ret=mysql_query(resource,sql_cmd);
+	if(sql_ret!=0){
+		see(sql_cmd);
+		return DB_QUERY_FAILED;
+	}
+	sscanf(sql_row[id],"%d",&query_info.uid);
+	
+	for(int i = 0;i<2;++i){
+		if(query_info.code[i]==NULL){
+			query_info.code[i]=(char*)calloc(MAX_CODE_LENGTH+1,1);
+		}
+		snprintf(query_info.code[i],MAX_CODE_LENGTH,"%s",sql_row[3+i]);
+	}
+	
+	
+	return DB_QUERY_SUCCEED;	
+}
+
+int update_similar_score(MYSQL*resource,QUERY&query_info){
+	int sql_ret=0;
+	char sql_cmd[256]={0};
+	snprintf(sql_cmd,sizeof(sql_cmd),"UPDATE rukitest3 SET status=%d,ratio=%lf WHERE id=%d",DB_UPDATE_SUCCEED,query_info.similar_score,query_info.uid);	
+	sql_ret=mysql_query(resource,sql_cmd);
+	if(sql_ret!=0){
+		see(sql_cmd);
+		return DB_UPDATE_FAILED;
+	}
+	return DB_UPDATE_SUCCEED;
+}
+int Array[4][MAX_CODE_LENGTH*3+10];
+int cnt[512*2],*SA,*nSA,*Rank,*Height,*nRank;
+const int Offset=256;
+char text[MAX_CODE_LENGTH*3+10];
+void suffix_array(int L){
+       int i , j  , k;
+       SA=Array[0];nSA=Array[1];Rank=Array[2];
+       memset(cnt,0,sizeof(cnt));
+       for(i=0;i<L;i++) cnt[int(text[i])]++;
+       for(i=1;i<256;i++) cnt[i]+=cnt[i-1];
+       for(i=0;i<L;i++) SA[--cnt[int(text[i])]]=i;
+       
+       for(Rank[SA[0]]=0,i=1;i<L;i++){
+           Rank[SA[i]] = Rank[SA[i-1]];
+           if(text[SA[i]]!=text[SA[i-1]]){
+               Rank[SA[i]]++;
+           }
+       }
+       for(k=1;k<L && Rank[SA[L-1]] < L-1 ;k*=2){
+           for(i=0;i<L;i++)  cnt[Rank[SA[i]]] =  i+1 ;
+           for(i=L-1;i>=0;i--)
+               if(SA[i]>=k)
+                   nSA[--cnt[Rank[SA[i]-k]]] = SA[i] -  k;
+           for(i=L-k;i<L;i++)  nSA[--cnt[Rank[i]]]= i ;
+           nRank = SA ;SA = nSA;
+           for(nRank[SA[0]]=0,i=1;i<L;i++){
+               nRank[SA[i]] = nRank[SA[i-1]];
+               if(Rank[SA[i]] != Rank[SA[i-1]] ||
+                  Rank[SA[i]+k] != Rank[SA[i-1]+k])
+                   nRank[SA[i]]++;
+           }
+           nSA=Rank;Rank=nRank;
+       }
+
+       Height=Array[3];
+       for(k=0,i=0;i<L;i++){
+           if(Rank[i]==0){
+			   Height[Rank[i]]=0;
+		   }
+           else{
+               if(SA[Rank[i]-1]==i){
+				   Height[Rank[i]]=k;
+				   continue;
+			   }
+			   for(j=SA[Rank[i]-1];text[i+k]==text[j+k];k++);
+               Height[Rank[i]]=k;
+               if(k>0) k--;
+           }
+       }       
+}
+char str[2][MAX_CODE_LENGTH];
+int solve1(int len1,int len2){
+	int ans=0,l1=0,l2=0;
+	for(int i=1;i<len1;i++)
+		text[l1++]=str[0][i];
+	text[l1++]=0;
+	l2=l1;
+	for(int i=1;i<len2;i++){
+		text[l2++]=str[1][i];
+	}
+	text[l2++]='$';
+
+	suffix_array(l2);
+
+	int lenall=l2;
+	for(int i=1;i<lenall;i++){
+		if((SA[i]<l1&&SA[i-1]>=l1)||(SA[i]>=l1&&SA[i-1]<l1))
+			if(Height[i]>ans)
+				ans=Height[i];
+	}
+	return ans;
+}
+double probably1(double s,double len1,double len2){
+	return (s)/((len1+len2)/2-1);
+}
+double probably2(double s,double len1,double len2){
+	return ((len1+len2)/2-s)/((len1+len2)/2);
+  
+}
+int main(){
+	
+	QUERY query_info;
+	memset(&query_info,0,sizeof(query_info));
+	MYSQL*mysql=do_connect_mysql();	
+	if(mysql==NULL){
+		
+		exit(0);
+	}
+	while(true){
+		int query_ret=query_next_pair(mysql,query_info);
+		if(query_ret!=DB_QUERY_SUCCEED){
+			
+			see("query failed");
+			break;
+		}
+	
+		see(query_info.uid);
+	
+			
+	
+	
+	
+	
+		similar_judge(query_info);
+
+		query_ret=update_similar_score(mysql,query_info);
+		if(query_ret!=DB_UPDATE_SUCCEED){
+			see("update failed");
+			
+			break;
+		}
+	}
+}

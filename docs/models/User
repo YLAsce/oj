@@ -1,0 +1,11 @@
+到mptt的那个目录下执行
+python setup.py install
+model User
+    uid: int field, primary key
+    username: char field, unique=true, indexed
+    nickname: char field(30)
+    passwd: char field(128)
+    gender: char field('Male' or 'Female')
+    email: email field
+    last_ip: ip field
+

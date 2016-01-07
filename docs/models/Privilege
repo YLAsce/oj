@@ -1,0 +1,11 @@
+class Root:
+    @field
+    root_id 主键
+    root_name 学校名字缩写
+    root_name_cn 学校中文名全称
+
+class AdminInfo
+    @field
+    admin_id 主键 外键User.Admin
+    contest_lim 还剩多少场考试可以加，-1表示无穷多
+

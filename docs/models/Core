@@ -1,0 +1,34 @@
+judge对django是透明的，django可见的只有一个judge的消息队列。而Core模块就是django中和消息队列交互模块。
+Core的作用：
+1. 负责将submission模块递交的请求，合并上必要的problem信息，格式化为judge可读的格式，送入消息队列。
+2. 定时从消息队列中取出数据，格式化为submission模块可读的格式，送入submission。
+
+具体而言，Core有一个类JudgeQueue，其中有两个函数负责上述任务：
+Core.models.JudgeQueue.sendJudge(cls, sid, pid, lang) 
+负责整合submission递交的信息和problem信息（时限，内存限etc），格式化为judge可读的字符串，送入队列。
+Core.models.JudgeQueue.getJudge(cls) 
+定时任务函数，负责把judge返回的信息（另一个消息队列中）提取出来，格式化为submission可读的字典，调用Submission.models.Submisson.updateSub()
+
+为保证judge的松耦合，judge本身不会进行submission维度的判定，只会对返回对每组数据的判决结果
+
+函数原型约定
+@classmethod
+Submission.models.Submission.updateSub(cls, sid, judgeInfo)
+其中judgeInfo为字典，实例如下：
+{
+    'comp_succ' : True or False #编译成功否
+    'comp_info' : '...' #编译失败信息 失败才有
+    'result' : [] #每组数据结果，实例如下
+}
+
+'result': [
+{'status':'ac', 'time':123, 'mem':456},
+{...},
+...
+]
+
+每组数据返回结果顺序：
+System Error(全局)>CE(全局)>RE>MLE>TLE>OLE(不确定)>PE>AC
+建议默认的评分机制也使用该顺序。
+
+

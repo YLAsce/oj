@@ -1,0 +1,17 @@
+before runserver, should check PATH VARIABLES below(absolute path recommended):
+[judge/jari]
+	conf.py:
+		SUB_PATH
+		CASE_PATH
+		RUN_PATH
+[kari/kari]
+	const.py:
+		PROBLEM_DATA_PATH
+		SUBMISSION_CODE_PATH
+		GENERAL_SUBMISSION_CODE_PATH
+		SUBMISSION_TMP_PATH
+
+	settings.py:
+		MEDIA_ROOT
+		STATICFILES_DIRS
+		TEMPLATE_DIRS

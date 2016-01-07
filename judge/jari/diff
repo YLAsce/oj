@@ -1,0 +1,648 @@
+diff --git a/judge/jari/compile.py b/judge/jari/compile.py
+index ffe8260..377a3f7 100644
+--- a/judge/jari/compile.py
++++ b/judge/jari/compile.py
+@@ -10,29 +10,34 @@ from conf import JudgeConf as jcnf
+ 
+ class Compile(object):
+ 
+-    def __init__(self):
+-        pass
++    def __init__(self, run_path = None):
++        if run_path:
++            self.run_path = run_path
++        else:
++            self.run_path = jcnf.RUN_PATH
+ 
+     def compile(self, sub):
+ 
+-        #if not isinstance(sub, Sub): raise Exception('hehe')
+         sub.status = jcnf.SUB_STATUS['compiling']
+ 
+-        run_path = jcnf.RUN_PATH
+-
+-        if os.path.exists(run_path):
+-            shutil.rmtree(run_path)
++        if os.path.exists(self.run_path):
++            shutil.rmtree(self.run_path)
+ 
+         try:
+-            os.mkdir(run_path, 0755)
+-        except (OSError):
++            os.mkdir(self.run_path, 0755)
++        except (OSError): # TODO write log
+             sys.stderr.write('could not remake run path')
++            raise Exception('could not remake run path')
+ 
++        if sub.code_path:
++            self.code_path = sub.code_path
++        else:
++            self.code_path = jcnf.getSubPath(sub.sid)
+         try:
+-            shutil.copyfile(jcnf.SUB_PATH+str(sub.sid),
+-                run_path+jcnf.getSrcName(sub.lang))
+-        except (shutil.Error, IOError):
++            shutil.copyfile(self.code_path, self.run_path+jcnf.getSrcName(sub.lang))
++        except (shutil.Error, IOError): # TODO write log
+             sys.stderr.write('source file does not exist')
++            raise Exception('source file does not exist')
+ 
+         cmpl_pid = os.fork()
+ 
+@@ -42,9 +47,10 @@ class Compile(object):
+             cmpl_param = jcnf.CMPL_PARAM[sub.lang]
+ 
+             try:
+-                cmpl_err = open(run_path+'ce', 'w')
++                cmpl_err = open(self.run_path+'ce', 'w')
+             except:
+-                pass
++                sys.stderr.write('cannot log compilation info')
++                raise Exception('cannot log compilation info')
+             os.dup2(cmpl_err.fileno(), 2)
+ 
+             resource.setrlimit(resource.RLIMIT_CPU, jcnf.CMPL_RLIM['RLIMIT_CPU'])
+@@ -71,7 +77,7 @@ class Compile(object):
+                 cmpl_ret = 1
+ 
+             if cmpl_ret != 0:
+-                cmpl_err = open(run_path+'ce', 'r')
++                cmpl_err = open(self.run_path+'ce', 'r')
+                 sub.ce = cmpl_err.read()
+                 sub.status = jcnf.SUB_STATUS['compilation error']
+                 cmpl_err.close()
+diff --git a/judge/jari/conf.py b/judge/jari/conf.py
+index ea7e165..9775b01 100644
+--- a/judge/jari/conf.py
++++ b/judge/jari/conf.py
+@@ -1,6 +1,7 @@
+ # -*- coding: utf-8 -*-
+ import resource
+ import cptrace
++import syscall
+ 
+ #linux only rlimit
+ #define in /usr/include/{linux ver}/bits/resource.h
+@@ -21,10 +22,17 @@ cptrace.ORIG_EAX = 11
+ 
+ class JudgeConf(object):
+ 
++    @classmethod
++    def init(cls):
++        pass
++
++    QUEUE_HOST = 'localhost' # queue host ip
++    QUEUE_NAME = 'judge' # judge request queue name
++
+     OLE_THRESHOLD = 4096
+     OLE_RATIO = 5
+ 
+-    LANG = ('gcc', 'g++', 'java')
++    LANG = ('gcc', 'g++', 'java', 'python2',)
+ 
+     SUB_STATUS = {
+             'init':'init',
+@@ -48,19 +56,31 @@ class JudgeConf(object):
+             }
+ 
+ #filename and filepath
+-    SUB_PATH = '/home/jffifa/kari/src/submission/'  #/home/oj/submission/{sid}
+-    CASE_PATH = '/home/jffifa/kari/src/data/'  #/home/oj/test_case/{pid}/{x}.in and {x}.out
+-    RUN_PATH = './run/'  #relative path
++    SUB_PATH = '/home/buptacm/oj/media/submission/'  # default code path
++    CASE_PATH = '/home/buptacm/oj/media/data/'  # default data path {CASE_PATH}/{pid}/{x}.in and {x}.out
++    RUN_PATH = '/home/buptacm/oj/judge/jari/run/'
++
+     SRC_PREFIX = {
+             'gcc':'src',
+             'g++':'src',
+             'java':'Main',
++            'python':'src',
+             }
+ 
++    SRC_SUFFIX = {
++            'gcc':'c',
++            'g++':'cpp',
++            'java':'java',
++            'python':'py',
++            }
++   
+     @classmethod
+     def getSrcName(cls, lang):
+         return '.'.join([cls.SRC_PREFIX[lang], cls.SRC_SUFFIX[lang]])
+ 
++    def getSrcPath(cls, lang):
++        return cls.RUN_PATH+cls.getSrcName(lang)
++
+     @classmethod
+     def getSubPath(cls, sid):
+         return cls.SUB_PATH+str(sid)
+@@ -81,51 +101,61 @@ class JudgeConf(object):
+     def getCasePathO(cls, pid, case_id):
+         return cls.getCasePath(pid)+str(case_id)+'.out'
+ 
+-    SRC_SUFFIX = {
+-            'gcc':'c',
+-            'g++':'cpp',
+-            'java':'java'
+-            }
+-   
+-#COMPILE
+-    CMPL_RLIM = {  #resource limit to compiler
++#COMPILE PARAM
++
++    #resource limit to compiler
++    CMPL_RLIM = {
+             'RLIMIT_CPU':(5, 5),
+             }
+ 
++    #compiler execution
+     CMPL_CMD = {
+             'gcc':'gcc',
+             'g++':'g++',
+-            'java':'javac'
++            'java':'javac',
++            'python':None,
+             }
+ 
+-    CMPL_PARAM = {
++    #compiling option
++    CMPL_PARAM = {  
+             'gcc': [
+                 CMPL_CMD['gcc'],
+-                '-O2',
+-                '-DONLINE_JUDGE',
+-                '-std=gnu99',
+-                '-lm',
+                 '-o',
+                 RUN_PATH+SRC_PREFIX['gcc'],
+                 RUN_PATH+'.'.join([SRC_PREFIX['gcc'], SRC_SUFFIX['gcc']]),
++                #'-O2',
++                '-DONLINE_JUDGE',
++                '-std=c99',
++                '-lm',
+                 ],
++
+             'g++': [
+                 CMPL_CMD['g++'],
+-                '-O2',
+-                '-DONLINE_JUDGE',
+                 '-o',
+                 RUN_PATH+SRC_PREFIX['g++'],
+                 RUN_PATH+'.'.join([SRC_PREFIX['g++'], SRC_SUFFIX['g++']]),
++                #'-O2',
++                '-DONLINE_JUDGE',
++                ],
++
++            'java': [
++                CMPL_CMD['java'],
++                RUN_PATH+'.'.join([SRC_PREFIX['java'], SRC_SUFFIX['java']]),
++                '-d',
++                RUN_PATH,
+                 ],
+-            'java': [],
++
++            'python2': None,
+             }
+     
+-#JUDGE
++#JUDGE PARAM
++
++    #runtime rlimit. the first number of the tuple for soft limit, while the second for hard limit
+     EXEC_RLIM = {
+             'gcc': {
+-                resource.RLIMIT_NPROC:(1, 1),
+-                resource.RLIMIT_FSIZE:(1073741824, 1073741824),
+-                resource.RLIMIT_CORE:(0, 0),
++                resource.RLIMIT_NPROC:(1, 1),  #limit for number of processor
++                resource.RLIMIT_FSIZE:(1073741824, 1073741824),  #maximum size of files the process may create
++                resource.RLIMIT_CORE:(0, 0),  #core file size, 0 for no core file
+                 },
+             'g++': {
+                 resource.RLIMIT_NPROC:(1, 1),
+@@ -133,46 +163,76 @@ class JudgeConf(object):
+                 resource.RLIMIT_CORE:(0, 0),
+                 },
+             'java': {
+-                resource.RLIMIT_NPROC:(1, 1),
++                resource.RLIMIT_NPROC:(1, 1),  #java vm uses multithreads
+                 resource.RLIMIT_FSIZE:(1073741824, 1073741824),
+                 resource.RLIMIT_CORE:(0, 0),
+                 },
++            'python': None
+             }
+     
++    #execution command
+     EXEC_CMD = {
+             'gcc': RUN_PATH+SRC_PREFIX['gcc'],
+             'g++': RUN_PATH+SRC_PREFIX['g++'],
+-            'java': ''
++            'java': 'java',
++            'python': 'python',
+             }
+ 
++    #execution param
+     EXEC_PARAM = {
+-            'gcc': [RUN_PATH+SRC_PREFIX['gcc'],],
+-            'g++': [RUN_PATH+SRC_PREFIX['g++'],],
+-            'java': [],
++            'gcc': [EXEC_CMD['gcc'],],
++            'g++': [EXEC_CMD['g++'],],
++            'java': [
++                EXEC_CMD['java'],
++                '-classpath',
++                RUN_PATH,
++                SRC_PREFIX['java'],
++            ],
++            'python': [EXEC_CMD['python'], RUN_PATH+SRC_PREFIX['python']],
+             }
+ 
++    #time limit ratio
+     EXEC_TL_RATIO = {
+             'gcc': 1,
+             'g++': 1,
+-            'java': 1.5,
++            'java': 2,
++            'python2': 2,
+             }
+ 
++    #memory limit ratio
+     EXEC_ML_RATIO = {
+             'gcc': 1,
+             'g++': 1,
+-            'java': 1.5,
++            'java': 2,
++            'python2': 2,
+             }
+ 
++    #execution minimum time limit in millisecond
+     EXEC_MIN_TL = {
+-            'gcc': 10,
+-            'g++': 10,
+-            'java': 10,
++            'gcc': 16,
++            'g++': 16,
++            'java': 16,
++            'python2': 16,
+             }
+ 
++    #execution minimum memory limit in kb
+     EXEC_MIN_ML = {
+-            'gcc': 2000,
+-            'g++': 2000,
+-            'java': 2000,
++            'gcc': 1024,
++            'g++': 1024,
++            'java': 1024,
++            'python2': 1024,
+             }
+ 
++    #maximum memory for execution
+     EXEC_MAX_MEM = 1048576*1024
++
++    # basic syscall policy
++    SYSCALL = syscall.SYSCALL
++
++    # ALL, NO, or extend as you may implement
++    POLICY = {
++            'gcc': 'ALL',
++            'g++': 'ALL',
++            'java': 'NO',
++            'python': 'NO',
++            }
+diff --git a/judge/jari/diff.py b/judge/jari/diff.py
+index 04f6527..5850bf6 100644
+--- a/judge/jari/diff.py
++++ b/judge/jari/diff.py
+@@ -35,13 +35,13 @@ class Diff(object):
+             if (not stdl) and (not ansl):
+                 return jcnf.JUDGE_RES['ac']
+ 
+-            if (not stdl) or (not ansl):  #maybe PE or WA
++            if (not stdl) or (not ansl):
+                 break
+ 
+             stdl = stdl.rstrip('\r\n');
+             ansl = ansl.rstrip('\r\n');
+ 
+-            if (ansl != stdl):  #maybe PE or WA
++            if (ansl != stdl):
+                 break
+ 
+-        return jcnf.JUDGE_RES['wa']  #now all PE is represented by wa
++        return jcnf.JUDGE_RES['wa']  # TODO should we judge PE?
+diff --git a/judge/jari/jari.py b/judge/jari/jari.py
+index a9e4cc7..d5e3761 100755
+--- a/judge/jari/jari.py
++++ b/judge/jari/jari.py
+@@ -8,51 +8,47 @@ from sub import Sub
+ from judge import Judge
+ 
+ def daemon():
++    def callback(ch, method, properties, body):
++        print " [x] Received judge request %r" % (body,) # for debug
++        s = Sub()
++        s.getSub(body)
++        try:
++            c = Compile()
++            c.compile(s)
++        except Exception, e:
++            print 'compile err| ', Exception, ':', e # for debug
++
++        if s.status == jcnf.SUB_STATUS['judging']:
++            try:
++                j = Judge()
++                j.judge(s)
++            except Exception, e:
++                print 'judge err| ', Exception, ':', e # for debug
++        elif s.status != jcnf.SUB_STATUS['compilation error']:
++            print 'compile done but unknown status=', s.status # for debug
++
++        retStr = s.retSub()
++        chnlOut.basic_publish(
++                exchange='',
++                routing_key='ret',
++                body=retStr,
++                properties=pika.BasicProperties(delivery_mode = 2,)
++                )
++        print " [x] Done judge result %r" % (retStr,) # for debug
++        ch.basic_ack(delivery_tag=method.delivery_tag)
++
+     try:
+-        connection = pika.BlockingConnection(pika.ConnectionParameters(
+-            host='localhost'))
++        connection = pika.BlockingConnection(pika.ConnectionParameters(host=jcnf.QUEUE_HOST))
+         chnlIn = connection.channel()
+         chnlOut = connection.channel()
+ 
+-        chnlIn.queue_declare(queue='judge', durable=True)
++        chnlIn.queue_declare(queue=jcnf.QUEUE_NAME, durable=True)
+         chnlOut.queue_declare(queue='ret', durable=True)
+-        print ' [*] Waiting for messages. To exit press CTRL+C'
++        print ' [*] Waiting for submissions. To exit press CTRL+C' # for debug
+ 
+-        def callback(ch, method, properties, body):
+-            print " [x] Received judge request %r" % (body,)
+-            #print json.loads(body, encoding)
+-            s = Sub()
+-            s.getSub(body)
+-            try:
+-                c = Compile()
+-                c.compile(s)
+-            except Exception, e:
+-                print 'compile err| ', Exception, ':', e
+-                pass
+-            if s.status == jcnf.SUB_STATUS['judging']:
+-                try:
+-                    j = Judge()
+-                    j.judge(s)
+-                except Exception, e:
+-                    print 'judge err| ', Exception, ':', e
+-            elif s.status != jcnf.SUB_STATUS['compilation error']:
+-                print 'compile done but unknown status=', s.status
+-            #print 'sub now status=', s.status
+-            retStr = s.retSub()
+-            chnlOut.basic_publish(
+-                    exchange='',
+-                    routing_key='ret',
+-                    body=retStr,
+-                    properties=pika.BasicProperties(
+-                        delivery_mode = 2,
+-                        )
+-                    )
+-            print " [x] Done judge result %r" % (retStr,)
+-            ch.basic_ack(delivery_tag=method.delivery_tag)
+ 
+         chnlIn.basic_qos(prefetch_count=1)
+-        chnlIn.basic_consume(callback,
+-                queue='judge',)
++        chnlIn.basic_consume(callback, queue=jcnf.QUEUE_NAME,)
+ 
+         chnlIn.start_consuming()
+     except KeyboardInterrupt:
+diff --git a/judge/jari/judge.py b/judge/jari/judge.py
+index e2ce754..5f3b6ed 100644
+--- a/judge/jari/judge.py
++++ b/judge/jari/judge.py
+@@ -13,20 +13,20 @@ JDEBUG = False
+ 
+ class Judge(object):
+     
+-    def __init__(self):
+-        pass
++    def __init__(self, run_path = None):
++        if run_path:
++            self.run_path = run_path
++        else:
++            self.run_path = jcnf.RUN_PATH
+ 
+     def judge(self, sub):
+ 
+         lang = sub.lang
+-
+-        exec_cmd = jcnf.EXEC_CMD[lang]
+-        exec_param = jcnf.EXEC_PARAM[lang]
++        mem_policy = True if (jcnf.POLICY[lang]=='ALL' or jcnf.POLICY[lang]=='MEM') else False
+ 
+         page_size = resource.getpagesize()
+ 
+         case_cnt = min(len(sub.case_lim), sub.case_cnt)
+-        #del(sub.case_lim[sub.case_cnt:])
+         sub.case_done = 0
+         case_id = 0
+ 
+@@ -37,6 +37,16 @@ class Judge(object):
+                 'mem':0,
+                 })
+ 
++        exec_cmd = jcnf.EXEC_CMD[lang]
++        exec_param = jcnf.EXEC_PARAM[lang]
++        if lang == 'java':
++            mem_lim = 0
++            for case_id in range(case_cnt):
++                mem_lim = max(mem_lim, sub.case_lim[case_id]['mem'])
++            exec_param.insert(1, '-Xmx'+str(mem_lim/1024+1)+'m')
++        print exec_cmd
++        print exec_param
++
+         for case_id in range(case_cnt):
+             lim = sub.case_lim[case_id]
+             res = sub.case_res[case_id]
+@@ -60,7 +70,8 @@ class Judge(object):
+                 resource.setrlimit(resource.RLIMIT_CPU, (rlimt, rlimt));
+ 
+                 rlimm = jcnf.EXEC_MAX_MEM
+-                resource.setrlimit(resource.RLIMIT_AS, (rlimm, rlimm));
++                if mem_policy: # java uses virtual machine
++                    resource.setrlimit(resource.RLIMIT_AS, (rlimm, rlimm));
+             
+                 os.dup2(exec_i.fileno(), 0)
+                 os.dup2(exec_o.fileno(), 1)
+@@ -87,7 +98,6 @@ class Judge(object):
+                 os._exit(1)
+ 
+             else:
+-                if JDEBUG: print exec_pid
+                 stat_info_file = str(exec_pid).join(['/proc/', '/statm'])
+                 res['mem'] = 0
+                 res['time'] = 0
+@@ -98,7 +108,6 @@ class Judge(object):
+                 #while True:
+                     exec_status = os.waitpid(-1, 0)
+                     if exec_status[0] != exec_pid:
+-                        if JDEBUG: print 'herrrrr'
+                         continue
+                     t_now = jclk()
+                     res['time'] += t_now-t_prev
+@@ -107,35 +116,31 @@ class Judge(object):
+ 
+                     if os.WIFSIGNALED(exec_status[1]):
+ #strange exited or tle?
+-                        if JDEBUG: print 'signaled: ', exec_status[1]>>8
+                         if res['time']*1000>lim['time']:
+                             res['res'] = jcnf.JUDGE_RES['tle']
+-                            if JDEBUG:
+-                                print exec_status[1]
+-                                print 'tle 1'
+                             break
+                     elif os.WIFEXITED(exec_status[1]):
+-                        if JDEBUG: print 'exited here', exec_status[1]>>8
+ #normally exited, ok
+                         break
+                     elif os.WIFSTOPPED(exec_status[1]):
+ #sigtrap by ptrace
+                         exec_sig = os.WSTOPSIG(exec_status[1])
+-                        DEBUG_CNT += 1
+-                        if JDEBUG: print DEBUG_CNT, exec_sig
+                         if exec_sig != signal.SIGTRAP:
+                             res['res'] = jcnf.JUDGE_RES['re']
+                             #print exec_status[0], exec_status[1], 'hehe', exec_sig
+                             cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid)
+ #strange exited?
+                             break
+-                        eax_now = cptrace.ptrace(cptrace.PTRACE_PEEKUSER, exec_pid, 4*cptrace.ORIG_EAX)
++                        eax_now = cptrace.ptrace(cptrace.PTRACE_PEEKUSER, exec_pid, 4*cptrace.ORIG_EAX) #when used in 64bit system, it should be 8*xxxx, so it is recommended to make it a const in conf
+ 
+-                        if (eax_now == 120):  #clone
+-                            if JDEBUG: print 'clone'
+-                            res['res'] = jcnf.JUDGE_RES['re']
+-                            cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid) #deprecated! should be implemented in another way
+-                            break
++                        if jcnf.POLICY[lang]=='ALL':
++                            if jcnf.SYSCALL[eax_now][0] == 0: #prohibited syscall
++                                res['res'] = jcnf.JUDGE_RES['re']
++                                cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid) #deprecated! should be implemented in another way
++                                break
++                        else:
++                            #TODO extend implementation
++                            pass
+ 
+                         if eax_now!=eax_prev and eax_now!=-1:
+                             insyscall = False
+@@ -155,14 +160,13 @@ class Judge(object):
+                             else:
+                                 insyscall = True
+ 
+-                        if res['mem']*page_size>lim['mem']*1024:
++                        if mem_policy and res['mem']*page_size>lim['mem']*1024:
+                             res['res'] = jcnf.JUDGE_RES['mle']
+                             cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid) #deprecated! should be implemented in another way
+                             break
+                         
+                         if res['time']*1000>lim['time']:
+                             res['res'] = jcnf.JUDGE_RES['tle']
+-                            if JDEBUG: print 'tle 2'
+                             cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid) #deprecated! should be implemented in another way
+                             break
+                         if eax_now!=-1:
+@@ -171,13 +175,11 @@ class Judge(object):
+                         t_prev = jclk()
+ 
+                     else:
+-                        if JDEBUG: print stat_status[1]>>8;
+                         #sys.stderr.write('unknown status')
+                         pass
+ 
+                     #TODO: also check total time limit?
+                     if res['res'] == jcnf.JUDGE_RES['tle']:
+-                        if JDEBUG: print 'tle 3'
+                         #TODO: write log
+                         cptrace.ptrace(cptrace.PTRACE_KILL, exec_pid) #deprecated! should be implemented in another way
+                     else:
+@@ -193,14 +195,9 @@ class Judge(object):
+                 res['time'] = int(res['time']*1000)
+ 
+                 if res['res'] == jcnf.JUDGE_RES['init']:
+-                    if JDEBUG:
+-                        print 'here'
+-                        print exec_status[1]>>8
+                     if os.WIFSIGNALED(exec_status[1]):
+-                        if JDEBUG: print 'signalllll'
+                         res['res'] = jcnf.JUDGE_RES['re']
+                     elif os.WIFSTOPPED(exec_status[1]) and os.WSTOPSIG(exec_status[1])!=signal.SIGTRAP:
+-                        if JDEBUG: print 'stoppedddd'
+                         res['res'] = jcnf.JUDGE_RES['re']
+ 
+                 if res['res'] == jcnf.JUDGE_RES['init']:
+diff --git a/judge/jari/sub.py b/judge/jari/sub.py
+index 094796c..72296ba 100644
+--- a/judge/jari/sub.py
++++ b/judge/jari/sub.py
+@@ -33,6 +33,15 @@ class Sub(object):
+         self.time_lim = getDict['time_lim']
+         self.mem_lim = getDict['mem_lim']
+         self.case_lim = getDict['case_lim']
++        #optional params
++        if 'mode' in getDict:
++            self.mode = getDict['mode'] # general submission | contest submission
++        if 'code_path' in getDict:
++            self.code_path = getDict['code_path'] # explicit code path
++        if 'data_path' in getDict:
++            self.code_path = getDict['data_path'] # explicit data directory path
++
++        return self
+ 
+     #send a submission to judge queue
+     def retSub(self):
+@@ -47,4 +56,8 @@ class Sub(object):
+                 'mem':self.mem,
+                 'case_res':self.case_res,
+                 }
++        #optional params
++        if self.mode:
++            retDict['mode'] = self.mode
++
+         return json.dumps(retDict)
+diff --git a/kari/Core/tasks.py b/kari/Core/tasks.py
+index 670fd94..69134da 100644
+--- a/kari/Core/tasks.py
++++ b/kari/Core/tasks.py
+@@ -72,6 +72,7 @@ class JudgeQueue(object):
+             #time.sleep(1);
+             #print 'sub#', s['sid']
+ 
++            print s['mode']
+             if s['mode'] == 'general':
+                 Submission.models.Submission.updateGeneralSubmission(s['sid'], s)
+             else:
+diff --git a/kari/Submission/models.py b/kari/Submission/models.py
+index 34ab791..49e25ba 100644
+--- a/kari/Submission/models.py
++++ b/kari/Submission/models.py
+@@ -422,7 +422,7 @@ class GeneralSubmission( models.Model):
+             g_s.status = 'Pending'
+             other_info['status'] = g_s.status
+ 
+-            g_s.data_cnt = s.problem.data_count
++            g_s.data_cnt = g_s.problem.data_count
+             other_info['data_cnt'] = str(g_s.data_cnt)
+ 
+             g_s.code_language = code_language
+diff --git a/kari/static/js/google-code-prettify/prettify.css b/kari/static/js/google-code-prettify/prettify.css
+index d44b3a2..e1c900b 100644
+--- a/kari/static/js/google-code-prettify/prettify.css
++++ b/kari/static/js/google-code-prettify/prettify.css
+@@ -1 +1 @@
+-.pln{color:#000}@media screen{.str{color:#080}.kwd{color:#008}.com{color:#800}.typ{color:#606}.lit{color:#066}.pun,.opn,.clo{color:#660}.tag{color:#008}.atn{color:#606}.atv{color:#080}.dec,.var{color:#606}.fun{color:red}}@media print,projection{.str{color:#060}.kwd{color:#006;font-weight:bold}.com{color:#600;font-style:italic}.typ{color:#404;font-weight:bold}.lit{color:#044}.pun,.opn,.clo{color:#440}.tag{color:#006;font-weight:bold}.atn{color:#404}.atv{color:#060}}pre.prettyprint{padding:2px;border:1px solid #888}ol.linenums{margin-top:0;margin-bottom:0}li.L0,li.L1,li.L2,li.L3,li.L5,li.L6,li.L7,li.L8{list-style-type:none}li.L1,li.L3,li.L5,li.L7,li.L9{background:#eee}
+\ No newline at end of file
++.pln{color:#000}@media screen{.str{color:#080}.kwd{color:#008}.com{color:#800}.typ{color:#606}.lit{color:#066}.pun,.opn,.clo{color:#660}.tag{color:#008}.atn{color:#606}.atv{color:#080}.dec,.var{color:#606}.fun{color:red}}@media print,projection{.str{color:#060}.kwd{color:#006;font-weight:bold}.com{color:#600;font-style:italic}.typ{color:#404;font-weight:bold}.lit{color:#044}.pun,.opn,.clo{color:#440}.tag{color:#006;font-weight:bold}.atn{color:#404}.atv{color:#060}}pre.prettyprint{padding:2px;border:1px solid #888}ol.linenums{margin-top:0;margin-bottom:0}li.L0,li.L1,li.L2,li.L3,li.L5,li.L6,li.L7,li.L8{list-style-type: decimal !important }li.L1,li.L3,li.L5,li.L7,li.L9{background:#eee}

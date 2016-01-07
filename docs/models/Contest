@@ -1,0 +1,92 @@
+# info about Contest.models
+class Contest:
+
+	field:
+		cid			AutoField	primary_key = True
+
+		author  		ForeignKey 	User.Admin
+
+		contest_title 		CharField 	max_length = 128
+
+		contest_desc 		TextField
+
+		start_time 		DateTimeField 	max_length = 128
+
+		length  		IntegerField 	default = 300
+		board_stop  		IntegerField 	default = 300
+		board_type 		IntegerField 	default = 0
+		contest_type 		IntegerField 	default = 0
+		submission_type 	IntegerField 	default = 0
+
+		permit_c 		BooleanField 	default = True
+		permit_cpp 		BooleanField 	default = True
+		permit_java 		BooleanField 	default = True
+
+	function:
+		contestList():
+			@param	 pageId.
+			@return	 A list of contest objects in given pageId.
+
+		getContest():
+			@param	 contestId.
+			@return	 A contest object or a Boolean.
+			@retval  A contest object on success.
+			@retval  False on invalid contestId.
+
+		addContest():
+			@param	 all fields of Contest except cid.
+			@param   a list of tuples(pids, prob_index[, prob_titles]).
+			@return	 Boolean.
+			@retval  True on success.
+			@retval  False on failure.
+
+		updateContest():
+			@param	 all fields of Contest except cid.
+			@param   a list of tuples(pids, prob_index[, prob_titles]).
+			@return	 Boolean.
+			@retval  True on success.
+			@retval  False on failure.
+
+		getContestProblem():
+			@return a list of ContestProblem objects
+			
+		addContestUser():
+			@param	 uid[, readonly].
+			@return	 Boolean.
+			@retval  True on success.
+			@retval  False on failure.
+			
+		canEnterContest():
+			@param	 User object
+			@return	 Boolean
+			@retval  True on success.
+			@retval  False on failure.
+
+		canAddContest():
+			@param	 User object
+			@return	 Boolean
+			@retval  True on success.
+			@retval  False on failure.
+
+		canUpdateContest():
+			@param	 User object
+			@return	 Boolean
+			@retval  True on success.
+			@retval  False on failure.
+
+class ContestProblem:
+
+	field:
+		contest			ForeignKey	Contest
+		problem			ForeignKey	Problem.Problem
+		problem_title		CharField	max_length = 128
+		problem_index		CharField 	max_length = 2
+
+
+class ContestUser:
+
+	field:
+		contest			ForeignKey	Contest
+		user			ForeignKey	User.User
+		readonly 		BooleanField 	default = False
+

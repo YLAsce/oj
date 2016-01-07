@@ -1,0 +1,6 @@
+__init__.py
+../Contest/models.py
+../Contest/views.py
+../Statistic/views.py
+../templates/Statistic/Board.html
+../templates/newtpl/base.html
